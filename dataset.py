@@ -4,19 +4,14 @@ Train/val: one 512x512 slice per .npz (image float32 in [0,1], label 0..8).
 Test: one .npy.h5 per case holding the full volume (D, 512, 512).
 """
 import os
-import sys
+import random
 
 import h5py
 import numpy as np
+import torch
+from scipy import ndimage
 from scipy.ndimage import zoom
 from torch.utils.data import Dataset
-
-_CSSNET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CSSNet")
-sys.path.insert(0, _CSSNET)
-# Colab ships HuggingFace `datasets`, which shadows CSSNet/datasets in sys.modules
-for _k in [k for k in sys.modules if k == "datasets" or k.startswith("datasets.")]:
-    del sys.modules[_k]
-from datasets.dataset_synapse import RandomGenerator  # noqa: E402  (released rot/flip + zoom augmentation)
 
 ORGANS = ["aorta", "gallbladder", "kidney_left", "kidney_right", "liver", "pancreas", "spleen", "stomach"]
 
@@ -24,6 +19,44 @@ ORGANS = ["aorta", "gallbladder", "kidney_left", "kidney_right", "liver", "pancr
 def read_list(list_dir, name):
     with open(os.path.join(list_dir, name)) as f:
         return [l.strip() for l in f if l.strip()]
+
+
+def random_rot_flip(image, label):
+    k = np.random.randint(0, 4)
+    image = np.rot90(image, k)
+    label = np.rot90(label, k)
+    axis = np.random.randint(0, 2)
+    image = np.flip(image, axis=axis).copy()
+    label = np.flip(label, axis=axis).copy()
+    return image, label
+
+
+def random_rotate(image, label):
+    angle = np.random.randint(-20, 20)
+    image = ndimage.rotate(image, angle, order=0, reshape=False)
+    label = ndimage.rotate(label, angle, order=0, reshape=False)
+    return image, label
+
+
+class RandomGenerator(object):
+    """Same __call__ as CSSNet/datasets/dataset_synapse.py (rot/flip or rotate, then zoom)."""
+
+    def __init__(self, output_size):
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, label = sample["image"], sample["label"]
+        if random.random() > 0.4:
+            image, label = random_rot_flip(image, label)
+        elif random.random() > 0.4:
+            image, label = random_rotate(image, label)
+        x, y = image.shape[:2]
+        if x != self.output_size[0] or y != self.output_size[1]:
+            image = zoom(image, (self.output_size[0] / x, self.output_size[1] / y), order=3)
+            label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
+        image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.float32))
+        return {"image": image, "label": label.long()}
 
 
 class SliceDataset(Dataset):

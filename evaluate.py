@@ -32,10 +32,15 @@ def main():
         cfg["data_root"] = args.data_root
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_model(cfg["num_classes"]).to(device)
+    ckpt_path = os.path.join(args.run, args.checkpoint)
+    if not os.path.isfile(ckpt_path) and args.checkpoint == "best.pth":
+        ckpt_path = os.path.join(args.run, "last.pth")
+    if not os.path.isfile(ckpt_path):
+        raise FileNotFoundError(f"no checkpoint in {args.run} (looked for best.pth / last.pth)")
     try:
-        ckpt = torch.load(os.path.join(args.run, args.checkpoint), map_location=device, weights_only=False)
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     except TypeError:
-        ckpt = torch.load(os.path.join(args.run, args.checkpoint), map_location=device)
+        ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt)
 
     ds = VolumeDataset(cfg["data_root"], cfg["list_dir"], args.limit)
