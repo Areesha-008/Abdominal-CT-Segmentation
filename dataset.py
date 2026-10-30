@@ -11,7 +11,11 @@ import numpy as np
 from scipy.ndimage import zoom
 from torch.utils.data import Dataset
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "CSSNet"))
+_CSSNET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CSSNet")
+sys.path.insert(0, _CSSNET)
+# Colab ships HuggingFace `datasets`, which shadows CSSNet/datasets in sys.modules
+for _k in [k for k in sys.modules if k == "datasets" or k.startswith("datasets.")]:
+    del sys.modules[_k]
 from datasets.dataset_synapse import RandomGenerator  # noqa: E402  (released rot/flip + zoom augmentation)
 
 ORGANS = ["aorta", "gallbladder", "kidney_left", "kidney_right", "liver", "pancreas", "spleen", "stomach"]
