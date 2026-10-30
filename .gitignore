@@ -1,0 +1,6 @@
+.venv/
+data/
+docs/*.pdf
+runs/
+__pycache__/
+*.pth

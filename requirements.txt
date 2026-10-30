@@ -1,0 +1,13 @@
+torch
+torchvision
+numpy
+scipy
+h5py
+opencv-python-headless
+timm
+ml-collections
+medpy
+SimpleITK
+tqdm
+matplotlib
+pyyaml

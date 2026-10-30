@@ -1,0 +1,19 @@
+# Shared training budget. Copy these values for every experiment so the three runs stay comparable.
+data_root: data/Synapse
+list_dir: lists
+img_size: 384
+num_classes: 9
+batch_size: 2          # Colab T4 budget (released code used 5)
+max_epochs: 20         # Colab session budget (released code used 500)
+early_stop_patience: 5
+early_stop_min_delta: 0.0
+base_lr: 0.0003
+weight_decay: 0.0001
+lr_schedule: poly
+topk_threshold: 0.8
+seed: 1234
+num_workers: 2
+overlay_slices:
+  - [case0008, 70]
+  - [case0022, 45]
+  - [case0036, 95]
