@@ -5,7 +5,7 @@ img_size: 384
 num_classes: 9
 batch_size: 2          # Colab T4 budget (released code used 5)
 max_epochs: 20         # Colab session budget (released code used 500)
-early_stop_patience: 5
+early_stop_patience: 100
 early_stop_min_delta: 0.0
 base_lr: 0.0003
 weight_decay: 0.0001
