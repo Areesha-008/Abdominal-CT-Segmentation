@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from common import build_model, load_config, predict_volume
 from dataset import ORGANS, VolumeDataset
+from preprocess import build_preprocess
 from metrics import dice_iou
 
 
@@ -43,7 +44,7 @@ def main():
         ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt)
 
-    ds = VolumeDataset(cfg["data_root"], cfg["list_dir"], args.limit)
+    ds = VolumeDataset(cfg["data_root"], cfg["list_dir"], args.limit, preprocess=build_preprocess(cfg))
     overlay_slices = {c: i for c, i in cfg["overlay_slices"]}
     os.makedirs(os.path.join(args.run, "overlays"), exist_ok=True)
 

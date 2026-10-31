@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from common import build_model, load_config, set_seed
 from dataset import SliceDataset
+from preprocess import build_preprocess
 from losses import CSSNetLoss
 from metrics import dice_iou
 
@@ -38,8 +39,9 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     json.dump({**cfg, "device": str(device)}, open(os.path.join(args.out, "config_used.json"), "w"), indent=2)
 
-    train_ds = SliceDataset(cfg["data_root"], cfg["list_dir"], "train", cfg["img_size"], args.limit)
-    val_ds = SliceDataset(cfg["data_root"], cfg["list_dir"], "val", cfg["img_size"], args.limit)
+    pre = build_preprocess(cfg)
+    train_ds = SliceDataset(cfg["data_root"], cfg["list_dir"], "train", cfg["img_size"], args.limit, preprocess=pre)
+    val_ds = SliceDataset(cfg["data_root"], cfg["list_dir"], "val", cfg["img_size"], args.limit, preprocess=pre)
     train_dl = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg["num_workers"], pin_memory=True, drop_last=True)
     val_dl = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False, num_workers=cfg["num_workers"])
 
@@ -49,6 +51,8 @@ def main():
     total_iters = cfg["max_epochs"] * len(train_dl)
     patience = cfg["early_stop_patience"]
     min_delta = cfg["early_stop_min_delta"]
+    save_every = cfg.get("save_every")          # e.g. 5 -> keep ckpt_epoch005.pth, 010, ...
+    target = cfg.get("target_val_dice")         # optional: stop once val mean Dice exceeds this
 
     log, best_val, stale, it, start_epoch = [], -1.0, 0, 0, 0
     last_path = os.path.join(args.out, "last.pth")
@@ -59,8 +63,11 @@ def main():
         optimizer.load_state_dict(ckpt["optimizer"])
         start_epoch, it, best_val, stale = ckpt["epoch"] + 1, ckpt["it"], ckpt["best_val"], ckpt["stale"]
         if os.path.isfile(log_path):
-            log = json.load(open(log_path))
+            log = [r for r in json.load(open(log_path)) if r["epoch"] < start_epoch]  # drop epochs not covered by last.pth
         print(f"resume from epoch {start_epoch}, best val dice {best_val:.4f}")
+        if target is not None and best_val > target:
+            print(f"already above target {target} (best {best_val:.4f}); nothing to do")
+            return
 
     for epoch in range(start_epoch, cfg["max_epochs"]):
         model.train()
@@ -91,8 +98,14 @@ def main():
             rec["stale_epochs"] = stale
         log.append(rec)
         print(json.dumps(rec))
-        json.dump(log, open(log_path, "w"), indent=1)
-        torch.save({"epoch": epoch, "it": it, "best_val": best_val, "stale": stale, "model": model.state_dict(), "optimizer": optimizer.state_dict()}, last_path)
+        _save_json(log, log_path)
+        state = {"epoch": epoch, "it": it, "best_val": best_val, "stale": stale, "model": model.state_dict(), "optimizer": optimizer.state_dict()}
+        _save_atomic(state, last_path)  # every epoch -> resume point
+        if save_every and (epoch + 1) % save_every == 0:
+            _save_atomic(state, os.path.join(args.out, f"ckpt_epoch{epoch + 1:03d}.pth"))
+        if target is not None and val_dice > target:
+            print(f"stop at epoch {epoch}: val mean Dice {val_dice:.4f} > target {target}")
+            break
         if stale >= patience:
             print(f"early stop at epoch {epoch}: val mean Dice unchanged for {patience} epochs (best {best_val:.4f})")
             break
@@ -111,6 +124,20 @@ def validate(model, dl, num_classes, device):
             if not np.all(np.isnan(d)):
                 scores.append(np.nanmean(d))
     return float(np.mean(scores)) if scores else 0.0
+
+
+def _save_atomic(obj, path):
+    """Write to a temp file then rename, so a crash mid-save cannot corrupt the checkpoint."""
+    tmp = path + ".tmp"
+    torch.save(obj, tmp)
+    os.replace(tmp, path)
+
+
+def _save_json(obj, path):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=1)
+    os.replace(tmp, path)
 
 
 def _load(path, device):

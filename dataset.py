@@ -62,8 +62,9 @@ class RandomGenerator(object):
 class SliceDataset(Dataset):
     """Train or val slices. Train uses the released augmentation; val only resizes."""
 
-    def __init__(self, data_root, list_dir, split, img_size, limit=None):
+    def __init__(self, data_root, list_dir, split, img_size, limit=None, preprocess=None):
         assert split in ("train", "val")
+        self.preprocess = preprocess
         self.names = read_list(list_dir, f"{split}.txt")[:limit]
         self.dir = os.path.join(data_root, "train")
         self.img_size = img_size
@@ -75,6 +76,8 @@ class SliceDataset(Dataset):
     def __getitem__(self, idx):
         d = np.load(os.path.join(self.dir, self.names[idx] + ".npz"))
         image, label = d["image"], d["label"]
+        if self.preprocess is not None:
+            image = self.preprocess(image)  # before augmentation/resize, same as for test volumes
         if self.augment is not None:
             return self.augment({"image": image, "label": label})
         return {"image": resize_image(image, self.img_size)[None], "label": resize_label(label, self.img_size).astype(np.int64)}
@@ -83,7 +86,8 @@ class SliceDataset(Dataset):
 class VolumeDataset(Dataset):
     """Test volumes at native 512x512."""
 
-    def __init__(self, data_root, list_dir, limit=None):
+    def __init__(self, data_root, list_dir, limit=None, preprocess=None):
+        self.preprocess = preprocess
         self.names = read_list(list_dir, "test_vol.txt")[:limit]
         self.dir = os.path.join(data_root, "test")
 
@@ -93,6 +97,8 @@ class VolumeDataset(Dataset):
     def __getitem__(self, idx):
         with h5py.File(os.path.join(self.dir, self.names[idx] + ".npy.h5"), "r") as f:
             image, label = f["image"][:], f["label"][:]
+        if self.preprocess is not None:
+            image = np.stack([self.preprocess(sl) for sl in image])
         return {"image": image, "label": label.astype(np.int64), "case": self.names[idx]}
 
 
